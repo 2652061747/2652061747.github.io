@@ -1175,7 +1175,7 @@ pre .javascript .function {
 }
 .links-of-author a::before,
 .links-of-author span.exturl::before {
-  background: #3cdfe7;
+  background: #3d9d39;
   border-radius: 50%;
   content: ' ';
   display: inline-block;
@@ -1678,7 +1678,7 @@ pre .javascript .function {
 .post-eof {
   background: #ccc;
   height: 1px;
-  margin: 60px auto 80px;
+  margin: 0px auto 120px;
   text-align: center;
   width: 8%;
 }
