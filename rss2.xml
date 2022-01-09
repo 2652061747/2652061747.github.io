@@ -9,8 +9,29 @@
     <atom:link href="http://example.com/rss2.xml" rel="self" type="application/rss+xml"/>
     
     <description>绝对清醒 绝对理智</description>
-    <pubDate>Fri, 07 Jan 2022 01:15:51 GMT</pubDate>
+    <pubDate>Sun, 09 Jan 2022 06:59:29 GMT</pubDate>
     <generator>http://hexo.io/</generator>
+    
+    <item>
+      <title>姿态解算</title>
+      <link>http://example.com/2022/01/09/%E5%A7%BF%E6%80%81%E8%A7%A3%E7%AE%97/</link>
+      <guid>http://example.com/2022/01/09/%E5%A7%BF%E6%80%81%E8%A7%A3%E7%AE%97/</guid>
+      <pubDate>Sun, 09 Jan 2022 02:22:03 GMT</pubDate>
+      
+      <description>Mahony滤波进行姿态解算</description>
+      
+      
+      
+      <content:encoded><![CDATA[<h3 id="背景：飞控常见进行姿态解算的方法有dmp硬件解算（直接出四元数）、卡尔曼滤波、Mahony滤波，dmp解算除了不需占用主控算力之外，动态响应和误差都没有其他两种方法好，所以大部分还是采用这两种方式进行姿态解算。"><a href="#背景：飞控常见进行姿态解算的方法有dmp硬件解算（直接出四元数）、卡尔曼滤波、Mahony滤波，dmp解算除了不需占用主控算力之外，动态响应和误差都没有其他两种方法好，所以大部分还是采用这两种方式进行姿态解算。" class="headerlink" title="背景：飞控常见进行姿态解算的方法有dmp硬件解算（直接出四元数）、卡尔曼滤波、Mahony滤波，dmp解算除了不需占用主控算力之外，动态响应和误差都没有其他两种方法好，所以大部分还是采用这两种方式进行姿态解算。"></a>背景：飞控常见进行姿态解算的方法有dmp硬件解算（直接出四元数）、卡尔曼滤波、Mahony滤波，dmp解算除了不需占用主控算力之外，动态响应和误差都没有其他两种方法好，所以大部分还是采用这两种方式进行姿态解算。</h3><p>本篇文章利用Mahony进行姿态解算的讲解。</p><p>我们知道，遥控器信号通过无线协议传递给主控芯片，主控芯片对接收到的信号作出反应，通过pwm/ppm/sbus等协议驱动电机作出反应，以达到我们想要的效果，而姿态解算作为流程中的中间环节，是做出正确反映的前提，所以利用gyro、acc、磁力计进行姿态解算就尤为重要。本篇文章先介绍利用gyro、acc来获取机体实时的欧拉角（虽然yaw可信度很低）。</p><h3 id="学习算法的几点建议："><a href="#学习算法的几点建议：" class="headerlink" title="学习算法的几点建议："></a>学习算法的几点建议：</h3><p>1.以理解算法的思想为主，强化数学的工具性，弱化数学的推到计算。</p><p>2.结合实例代码，重点理解算法理论的实现形式。</p><p>3.利用实际数据分析算法的实现效果</p><h1 id="正文"><a href="#正文" class="headerlink" title="正文"></a>正文</h1><h2 id="空间姿态的常规描述"><a href="#空间姿态的常规描述" class="headerlink" title="空间姿态的常规描述"></a>空间姿态的常规描述</h2><p>定理：空间中坐标系的任意旋转，等效于依次绕三个坐标系定轴的旋转</p><p><strong>推导实例：</strong></p><p><img src="C:\Users\26520\Desktop\download\MobileFile\484ED5BD2A2F97F4A57A008367EFE13B.png" alt="484ED5BD2A2F97F4A57A008367EFE13B"></p><p>同理可证，绕xyz轴转动的过渡矩阵分别为：<br>$$<br>C^{b_1}_n = \left[<br>\matrix{<br>  1&amp;0&amp;0\<br>  0&amp;\cos\theta&amp;\sin\theta\<br>  0&amp;-\sin\theta&amp;\cos\theta<br>}<br>\right]<br>$$</p><p>$$<br> C^{b_2}_n = \left[\matrix{  \cos\gamma&amp;0&amp;-\sin\gamma\  0&amp;1&amp;0\  \sin\gamma&amp;0&amp;\cos\gamma }\right]<br>$$</p><p>$$<br>C^{b_3}_n = \left[\matrix{  \cos\psi&amp;-\sin\psi&amp;0\  \sin\psi&amp;\cos\psi&amp;0\  0&amp;0&amp;1 }\right]<br>$$</p><p>可以推出，在右手坐标系的前提下，任意旋转之后，得旋转矩阵：<br>$$<br> C^b_n = \left[\matrix{  \cos\gamma\cos\psi+\sin\gamma\sin\psi\sin\theta&amp;\sin\gamma\cos\psi\sin\theta&amp;-\sin\gamma\cos\theta\  \sin\psi\cos\theta&amp;\cos\psi\cos\theta&amp;\sin\theta\  \sin\gamma\cos\psi-\cos\gamma\sin\psi\sin\theta&amp;-\cos\gamma\cos\psi\sin\theta-\sin\gamma\sin\psi&amp;\cos\gamma\cos\theta }\right]<br>$$<br>注意顺序是y<em>x</em>z，不能随意改变。</p><p><strong>该矩阵称为方向余弦矩阵</strong></p><p>可以记<br>$$<br>C^b_n = \left[\matrix{  T_{11}&amp;T_{12}&amp;T_{13}\  T_{21}&amp;T_{22}&amp;T_{23}\  T_{31}&amp;T_{32}&amp;T_{33} }\right]<br>$$</p><p>由于矩阵正交有<br>$$<br>C^b_n=(C^n_b)^T = \left[\matrix{  T_{11}&amp;T_{21}&amp;T_{31}\  T_{12}&amp;T_{22}&amp;T_{32}\  T_{13}&amp;T_{23}&amp;T_{33} }\right]<br>$$<br>可以表示机体坐标系跟地理坐标系的角度关系。</p>]]></content:encoded>
+      
+      
+      
+      <category domain="http://example.com/tags/%E5%AD%A6%E4%B9%A0/">学习</category>
+      
+      
+      <comments>http://example.com/2022/01/09/%E5%A7%BF%E6%80%81%E8%A7%A3%E7%AE%97/#disqus_thread</comments>
+      
+    </item>
     
     <item>
       <title>电控培训准备</title>
@@ -51,25 +72,6 @@
       
       
       <comments>http://example.com/2021/12/21/%E9%A6%96%E4%B8%AA%E5%8D%9A%E5%AE%A2/#disqus_thread</comments>
-      
-    </item>
-    
-    <item>
-      <title>Hello World</title>
-      <link>http://example.com/2021/12/19/hello-world/</link>
-      <guid>http://example.com/2021/12/19/hello-world/</guid>
-      <pubDate>Sun, 19 Dec 2021 12:20:24 GMT</pubDate>
-      
-      <description>hello，world</description>
-      
-      
-      
-      <content:encoded><![CDATA[<p>Welcome to <a href="https://hexo.io/">Hexo</a>! This is your very first post. Check <a href="https://hexo.io/docs/">documentation</a> for more info. If you get any problems when using Hexo, you can find the answer in <a href="https://hexo.io/docs/troubleshooting.html">troubleshooting</a> or you can ask me on <a href="https://github.com/hexojs/hexo/issues">GitHub</a>.</p><h2 id="Quick-Start"><a href="#Quick-Start" class="headerlink" title="Quick Start"></a>Quick Start</h2><h3 id="Create-a-new-post"><a href="#Create-a-new-post" class="headerlink" title="Create a new post"></a>Create a new post</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo new <span class="string">&quot;My New Post&quot;</span></span><br></pre></td></tr></table></figure><p>More info: <a href="https://hexo.io/docs/writing.html">Writing</a></p><h3 id="Run-server"><a href="#Run-server" class="headerlink" title="Run server"></a>Run server</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo server</span><br></pre></td></tr></table></figure><p>More info: <a href="https://hexo.io/docs/server.html">Server</a></p><h3 id="Generate-static-files"><a href="#Generate-static-files" class="headerlink" title="Generate static files"></a>Generate static files</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo generate</span><br></pre></td></tr></table></figure><p>More info: <a href="https://hexo.io/docs/generating.html">Generating</a></p><h3 id="Deploy-to-remote-sites"><a href="#Deploy-to-remote-sites" class="headerlink" title="Deploy to remote sites"></a>Deploy to remote sites</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">$ hexo deploy</span><br></pre></td></tr></table></figure><p>More info: <a href="https://hexo.io/docs/one-command-deployment.html">Deployment</a></p>]]></content:encoded>
-      
-      
-      
-      
-      <comments>http://example.com/2021/12/19/hello-world/#disqus_thread</comments>
       
     </item>
     
