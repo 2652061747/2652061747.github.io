@@ -1168,7 +1168,7 @@ pre .javascript .function {
 }
 .links-of-author a::before,
 .links-of-author span.exturl::before {
-  background: #29882b;
+  background: #ff4e0f;
   border-radius: 50%;
   content: ' ';
   display: inline-block;
@@ -2709,7 +2709,7 @@ mjx-container + br {
   }
 }
 body {
-  background: url("/images/curry.jpg");
+  background: url("/images/kobe.jpg");
   background-repeat: no-repeat;
   background-attachment: fixed;
   background-size: cover;
